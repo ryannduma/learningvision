@@ -1,6 +1,6 @@
 import cv2 as cv
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import numpy as np
 from typing import Tuple, Any, Optional, Union, List
@@ -115,6 +115,12 @@ class ImageProcessorApp:
         if self.original_img is None:
             raise ValueError(f"Could not read image at {image_path}")
         
+        # Current processed image (starts as original)
+        self.current_img = self.original_img.copy()
+        
+        # Track applied operations
+        self.applied_operations = []
+        
         # Create main frame
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -123,8 +129,9 @@ class ImageProcessorApp:
         self.img_label = ttk.Label(self.main_frame)
         self.img_label.pack(pady=10)
         
-        # Display the original image
-        self.display_image(self.original_img, "Original Image")
+        # Create status label to show applied transformations
+        self.status_label = ttk.Label(self.main_frame, text="No transformations applied")
+        self.status_label.pack(pady=5)
         
         # Create buttons frame
         self.buttons_frame = ttk.Frame(self.main_frame)
@@ -137,6 +144,9 @@ class ImageProcessorApp:
         self.reset_button = ttk.Button(self.main_frame, text="Reset to Original", command=self.reset_image)
         self.reset_button.pack(pady=5)
         
+        # Display the original image (do this last after all UI elements are created)
+        self.display_image(self.original_img, "Original Image")
+        
     def create_buttons(self):
         operations = [
             ("Grayscale", self.apply_grayscale),
@@ -145,8 +155,7 @@ class ImageProcessorApp:
             ("Dilate", self.apply_dilate),
             ("Erode", self.apply_erode),
             ("Resize", self.apply_resize),
-            ("Crop", self.apply_crop),
-            ("All Effects", self.apply_all)
+            ("Crop", self.apply_crop)
         ]
         
         # Create a button for each operation
@@ -154,7 +163,26 @@ class ImageProcessorApp:
             btn = ttk.Button(self.buttons_frame, text=text, command=command)
             btn.pack(side=tk.LEFT, padx=5)
     
-    def display_image(self, image: np.ndarray, title: str):
+    def show_warning(self, message):
+        """Show a warning dialog but allow the user to proceed."""
+        return messagebox.askokcancel("Operation Warning", message)
+    
+    def check_operation_conflicts(self, operation):
+        """Check if the new operation conflicts with previously applied operations."""
+        conflicting_pairs = {
+            "Dilate": ["Erode"],
+            "Erode": ["Dilate"],
+            "Blur": ["Edges", "Dilate", "Erode"],
+            "Edges": ["Blur"]
+        }
+        
+        if operation in conflicting_pairs:
+            for conflict in conflicting_pairs[operation]:
+                if conflict in self.applied_operations:
+                    return f"Applying {operation} after {conflict} might not produce optimal results. Proceed anyway?"
+        return None
+    
+    def display_image(self, image, title: str):
         # Convert from BGR to RGB for PIL
         if len(image.shape) == 3:  # Color image
             image_rgb = cv.cvtColor(image, cv.COLOR_BGR2RGB)
@@ -179,55 +207,101 @@ class ImageProcessorApp:
         
         # Update window title
         self.root.title(f"Image Processor - {title}")
+        
+        # Update status label
+        if self.applied_operations:
+            self.status_label.config(text=f"Applied: {' → '.join(self.applied_operations)}")
+        else:
+            self.status_label.config(text="Original image")
     
     def reset_image(self):
-        self.display_image(self.original_img, "Original Image")
+        self.current_img = self.original_img.copy()
+        self.applied_operations = []
+        self.display_image(self.current_img, "Original Image")
+    
+    def apply_transformation(self, operation_name, result):
+        """Apply a transformation result and update tracking."""
+        # Update the current image
+        self.current_img = result
+        
+        # Add to applied operations list
+        self.applied_operations.append(operation_name)
+        
+        # Update display
+        self.display_image(self.current_img, f"After {operation_name}")
     
     def apply_grayscale(self):
-        result = apply_grayscale(self.original_img)
-        self.display_image(result, "Grayscale")
+        # Check for conflicts
+        warning = self.check_operation_conflicts("Grayscale")
+        if warning and not self.show_warning(warning):
+            return
+            
+        result = apply_grayscale(self.current_img)
+        self.apply_transformation("Grayscale", result)
     
     def apply_blur(self):
-        result = apply_blur(self.original_img)
-        self.display_image(result, "Blurred")
+        # Check for conflicts
+        warning = self.check_operation_conflicts("Blur")
+        if warning and not self.show_warning(warning):
+            return
+            
+        result = apply_blur(self.current_img)
+        self.apply_transformation("Blur", result)
     
     def detect_edges(self):
-        blurred = apply_blur(self.original_img)
-        result = detect_edges(blurred)
-        self.display_image(result, "Edges")
+        # Check for conflicts
+        warning = self.check_operation_conflicts("Edges")
+        if warning and not self.show_warning(warning):
+            return
+            
+        # For edge detection, we typically want to blur first
+        if "Blur" not in self.applied_operations:
+            blurred = apply_blur(self.current_img)
+            result = detect_edges(blurred)
+            self.apply_transformation("Edges", result)
+        else:
+            result = detect_edges(self.current_img)
+            self.apply_transformation("Edges", result)
     
     def apply_dilate(self):
-        blurred = apply_blur(self.original_img)
-        edges = detect_edges(blurred)
-        result = dilate_image(edges)
-        self.display_image(result, "Dilated")
+        # Check for conflicts
+        warning = self.check_operation_conflicts("Dilate")
+        if warning and not self.show_warning(warning):
+            return
+            
+        # Typically dilate works on edge images
+        if "Edges" not in self.applied_operations:
+            if self.show_warning("Dilation works best on edge images. Apply edge detection first?"):
+                blurred = apply_blur(self.current_img)
+                edges = detect_edges(blurred)
+                result = dilate_image(edges)
+                self.applied_operations.append("Edges")  # Add intermediate step
+                self.apply_transformation("Dilate", result)
+            else:
+                result = dilate_image(self.current_img)
+                self.apply_transformation("Dilate", result)
+        else:
+            result = dilate_image(self.current_img)
+            self.apply_transformation("Dilate", result)
     
     def apply_erode(self):
-        blurred = apply_blur(self.original_img)
-        edges = detect_edges(blurred)
-        dilated = dilate_image(edges)
-        result = erode_image(dilated)
-        self.display_image(result, "Eroded")
+        # Check for conflicts
+        warning = self.check_operation_conflicts("Erode")
+        if warning and not self.show_warning(warning):
+            return
+            
+        result = erode_image(self.current_img)
+        self.apply_transformation("Erode", result)
     
     def apply_resize(self):
-        result = resize_image(self.original_img)
-        self.display_image(result, "Resized")
+        # Resizing has little conflict with other operations
+        result = resize_image(self.current_img)
+        self.apply_transformation("Resize", result)
     
     def apply_crop(self):
-        result = crop_image(self.original_img)
-        self.display_image(result, "Cropped")
-    
-    def apply_all(self):
-        # Process the image with all transformations one by one
-        # Each will update the display
-        self.apply_grayscale()
-        self.root.after(1000, self.apply_blur)
-        self.root.after(2000, self.detect_edges)
-        self.root.after(3000, self.apply_dilate)
-        self.root.after(4000, self.apply_erode)
-        self.root.after(5000, self.apply_resize)
-        self.root.after(6000, self.apply_crop)
-        self.root.after(7000, self.reset_image)
+        # Cropping has little conflict with other operations
+        result = crop_image(self.current_img)
+        self.apply_transformation("Crop", result)
 
 def process_image():
     """
