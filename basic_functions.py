@@ -1,6 +1,6 @@
 import cv2 as cv
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from PIL import Image, ImageTk
 import numpy as np
 from typing import Tuple, Any, Optional, Union, List
@@ -104,11 +104,152 @@ def crop_image(image: ImageType, y_range: Tuple[int, int]=(50,200), x_range: Tup
     """
     return image[y_range[0]:y_range[1], x_range[0]:x_range[1]]
 
+def adjust_brightness_contrast(image: ImageType, alpha: float=1.5, beta: int=0) -> ImageType:
+    """
+    Adjust brightness and contrast of an image.
+    
+    Formula: new_image = alpha * original_image + beta
+    
+    Args:
+        image: The input image
+        alpha: Contrast control (1.0 means no change) (default: 1.5)
+        beta: Brightness control (0 means no change) (default: 0)
+        
+    Returns:
+        Adjusted image
+    """
+    return cv.convertScaleAbs(image, alpha=alpha, beta=beta)
+
+def apply_threshold(image: ImageType, threshold: int=127, max_val: int=255, 
+                   threshold_type: int=cv.THRESH_BINARY) -> ImageType:
+    """
+    Apply thresholding to an image.
+    
+    Args:
+        image: The input image (should be grayscale)
+        threshold: Threshold value (default: 127)
+        max_val: Maximum value to use with THRESH_BINARY (default: 255)
+        threshold_type: Type of thresholding (default: cv.THRESH_BINARY)
+        
+    Returns:
+        Thresholded image
+    """
+    # Convert to grayscale if image is color
+    if len(image.shape) > 2:
+        gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+    else:
+        gray = image
+    
+    _, thresholded = cv.threshold(gray, threshold, max_val, threshold_type)
+    return thresholded
+
+def rotate_image(image: ImageType, angle: float=45) -> ImageType:
+    """
+    Rotate an image by a specified angle.
+    
+    Args:
+        image: The input image
+        angle: Angle of rotation in degrees (default: 45)
+        
+    Returns:
+        Rotated image
+    """
+    # Get the image size
+    height, width = image.shape[:2]
+    
+    # Calculate the rotation matrix
+    center = (width // 2, height // 2)
+    rotation_matrix = cv.getRotationMatrix2D(center, angle, 1.0)
+    
+    # Perform the rotation
+    rotated = cv.warpAffine(image, rotation_matrix, (width, height))
+    return rotated
+
+def flip_image(image: ImageType, flip_code: int=1) -> ImageType:
+    """
+    Flip an image.
+    
+    Args:
+        image: The input image
+        flip_code: Flip direction (0: flip around x-axis, 1: flip around y-axis, -1: both) (default: 1)
+        
+    Returns:
+        Flipped image
+    """
+    return cv.flip(image, flip_code)
+
+def sharpen_image(image: ImageType) -> ImageType:
+    """
+    Apply sharpening filter to an image.
+    
+    Args:
+        image: The input image
+        
+    Returns:
+        Sharpened image
+    """
+    # Create sharpening kernel
+    kernel = np.array([[-1, -1, -1],
+                       [-1,  9, -1],
+                       [-1, -1, -1]])
+    
+    # Apply kernel to the image
+    sharpened = cv.filter2D(image, -1, kernel)
+    return sharpened
+
+def extract_color_channel(image: ImageType, channel: int=0) -> ImageType:
+    """
+    Extract a specific color channel from an image (BGR format).
+    
+    Args:
+        image: The input image (must be color)
+        channel: Channel to extract (0: blue, 1: green, 2: red) (default: 0)
+        
+    Returns:
+        Image with only the selected channel preserved
+    """
+    # Create a zero array of same shape as input image
+    zero_channels = np.zeros_like(image)
+    
+    # Create a copy of the image
+    output = zero_channels.copy()
+    
+    # Set the specified channel to the original value
+    output[:, :, channel] = image[:, :, channel]
+    
+    return output
+
+def add_text(image: ImageType, text: str="Sample Text", position: Tuple[int, int]=(50, 50), 
+            font: int=cv.FONT_HERSHEY_SIMPLEX, font_scale: float=1, 
+            color: Tuple[int, int, int]=(255, 255, 255), thickness: int=2) -> ImageType:
+    """
+    Add text to an image.
+    
+    Args:
+        image: The input image
+        text: Text to add (default: "Sample Text")
+        position: Position (x, y) to place text (default: (50, 50))
+        font: Font type (default: cv.FONT_HERSHEY_SIMPLEX)
+        font_scale: Font scale (default: 1)
+        color: Text color in BGR format (default: white)
+        thickness: Text thickness (default: 2)
+        
+    Returns:
+        Image with text
+    """
+    # Create a copy of the image to avoid modifying the original
+    img_copy = image.copy()
+    
+    # Put text on the image
+    cv.putText(img_copy, text, position, font, font_scale, color, thickness)
+    
+    return img_copy
+
 class ImageProcessorApp:
     def __init__(self, root: tk.Tk, image_path: str):
         self.root = root
         self.root.title("Image Processor")
-        self.root.geometry("800x600")
+        self.root.geometry("1000x650")
         
         # Load the image
         self.original_img = cv.imread(image_path)
@@ -133,9 +274,12 @@ class ImageProcessorApp:
         self.status_label = ttk.Label(self.main_frame, text="No transformations applied")
         self.status_label.pack(pady=5)
         
-        # Create buttons frame
-        self.buttons_frame = ttk.Frame(self.main_frame)
-        self.buttons_frame.pack(pady=10)
+        # Create buttons frame - using two rows for better organization
+        self.buttons_frame1 = ttk.Frame(self.main_frame)
+        self.buttons_frame1.pack(pady=5)
+        
+        self.buttons_frame2 = ttk.Frame(self.main_frame)
+        self.buttons_frame2.pack(pady=5)
         
         # Create buttons for each operation
         self.create_buttons()
@@ -148,7 +292,8 @@ class ImageProcessorApp:
         self.display_image(self.original_img, "Original Image")
         
     def create_buttons(self):
-        operations = [
+        # First row of operations
+        operations_row1 = [
             ("Grayscale", self.apply_grayscale),
             ("Blur", self.apply_blur),
             ("Edges", self.detect_edges),
@@ -158,9 +303,25 @@ class ImageProcessorApp:
             ("Crop", self.apply_crop)
         ]
         
-        # Create a button for each operation
-        for text, command in operations:
-            btn = ttk.Button(self.buttons_frame, text=text, command=command)
+        # Second row of operations (new functions)
+        operations_row2 = [
+            ("Brightness", self.apply_brightness),
+            ("Threshold", self.apply_threshold),
+            ("Rotate", self.apply_rotate),
+            ("Flip", self.apply_flip),
+            ("Sharpen", self.apply_sharpen),
+            ("Add Text", self.apply_add_text),
+            ("Color Filter", self.apply_color_filter)
+        ]
+        
+        # Create buttons for the first row
+        for text, command in operations_row1:
+            btn = ttk.Button(self.buttons_frame1, text=text, command=command)
+            btn.pack(side=tk.LEFT, padx=5)
+        
+        # Create buttons for the second row
+        for text, command in operations_row2:
+            btn = ttk.Button(self.buttons_frame2, text=text, command=command)
             btn.pack(side=tk.LEFT, padx=5)
     
     def show_warning(self, message):
@@ -172,8 +333,9 @@ class ImageProcessorApp:
         conflicting_pairs = {
             "Dilate": ["Erode"],
             "Erode": ["Dilate"],
-            "Blur": ["Edges", "Dilate", "Erode"],
-            "Edges": ["Blur"]
+            "Blur": ["Edges", "Dilate", "Erode", "Sharpen"],
+            "Edges": ["Blur"],
+            "Sharpen": ["Blur"]
         }
         
         if operation in conflicting_pairs:
@@ -302,6 +464,164 @@ class ImageProcessorApp:
         # Cropping has little conflict with other operations
         result = crop_image(self.current_img)
         self.apply_transformation("Crop", result)
+        
+    def apply_brightness(self):
+        # Prompt user for alpha (contrast) and beta (brightness) values
+        alpha = simpledialog.askfloat("Adjust Contrast", "Enter contrast multiplier (1.0 = no change):", 
+                                     initialvalue=1.5, minvalue=0.1, maxvalue=3.0)
+        if alpha is None:  # User cancelled
+            return
+            
+        beta = simpledialog.askinteger("Adjust Brightness", "Enter brightness value to add (0 = no change):", 
+                                      initialvalue=0, minvalue=-100, maxvalue=100)
+        if beta is None:  # User cancelled
+            return
+        
+        result = adjust_brightness_contrast(self.current_img, alpha=alpha, beta=beta)
+        self.apply_transformation(f"Brightness/Contrast (α={alpha:.1f}, β={beta})", result)
+    
+    def apply_threshold(self):
+        # Convert to grayscale if needed
+        if len(self.current_img.shape) > 2 and "Grayscale" not in self.applied_operations:
+            if self.show_warning("Thresholding works best on grayscale images. Convert to grayscale first?"):
+                img_to_threshold = apply_grayscale(self.current_img)
+                self.applied_operations.append("Grayscale")  # Add intermediate step
+            else:
+                img_to_threshold = self.current_img
+        else:
+            img_to_threshold = self.current_img
+        
+        # Prompt user for threshold value
+        threshold = simpledialog.askinteger("Threshold", "Enter threshold value (0-255):", 
+                                           initialvalue=127, minvalue=0, maxvalue=255)
+        if threshold is None:  # User cancelled
+            return
+        
+        result = apply_threshold(img_to_threshold, threshold=threshold)
+        self.apply_transformation(f"Threshold ({threshold})", result)
+    
+    def apply_rotate(self):
+        # Prompt user for rotation angle
+        angle = simpledialog.askfloat("Rotate", "Enter rotation angle in degrees:", 
+                                     initialvalue=45, minvalue=-180, maxvalue=180)
+        if angle is None:  # User cancelled
+            return
+        
+        result = rotate_image(self.current_img, angle=angle)
+        self.apply_transformation(f"Rotate ({angle}°)", result)
+    
+    def apply_flip(self):
+        # Create a popup to select flip direction
+        flip_window = tk.Toplevel(self.root)
+        flip_window.title("Flip Direction")
+        flip_window.geometry("250x150")
+        flip_window.resizable(False, False)
+        
+        flip_type = tk.IntVar(value=1)  # Default to horizontal flip
+        
+        ttk.Radiobutton(flip_window, text="Horizontal Flip", variable=flip_type, value=1).pack(pady=5)
+        ttk.Radiobutton(flip_window, text="Vertical Flip", variable=flip_type, value=0).pack(pady=5)
+        ttk.Radiobutton(flip_window, text="Both (180° Rotation)", variable=flip_type, value=-1).pack(pady=5)
+        
+        def apply_selected_flip():
+            flip_code = flip_type.get()
+            result = flip_image(self.current_img, flip_code=flip_code)
+            
+            flip_names = {1: "Horizontal", 0: "Vertical", -1: "Both"}
+            self.apply_transformation(f"Flip ({flip_names[flip_code]})", result)
+            flip_window.destroy()
+        
+        ttk.Button(flip_window, text="Apply", command=apply_selected_flip).pack(pady=10)
+    
+    def apply_sharpen(self):
+        # Check for conflicts
+        warning = self.check_operation_conflicts("Sharpen")
+        if warning and not self.show_warning(warning):
+            return
+            
+        result = sharpen_image(self.current_img)
+        self.apply_transformation("Sharpen", result)
+    
+    def apply_add_text(self):
+        # Create a dialog to get text details
+        text_window = tk.Toplevel(self.root)
+        text_window.title("Add Text")
+        text_window.geometry("300x250")
+        
+        ttk.Label(text_window, text="Text:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        text_var = tk.StringVar(value="Sample Text")
+        ttk.Entry(text_window, textvariable=text_var, width=25).grid(row=0, column=1, padx=5, pady=5)
+        
+        ttk.Label(text_window, text="Position X:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        pos_x_var = tk.IntVar(value=50)
+        ttk.Entry(text_window, textvariable=pos_x_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(text_window, text="Position Y:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        pos_y_var = tk.IntVar(value=50)
+        ttk.Entry(text_window, textvariable=pos_y_var, width=10).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(text_window, text="Font Size:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+        font_size_var = tk.DoubleVar(value=1.0)
+        ttk.Entry(text_window, textvariable=font_size_var, width=10).grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(text_window, text="Color:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        color_frame = ttk.Frame(text_window)
+        color_frame.grid(row=4, column=1, sticky="w", padx=5, pady=5)
+        
+        color_options = {
+            "White": (255, 255, 255),
+            "Black": (0, 0, 0),
+            "Red": (0, 0, 255),
+            "Green": (0, 255, 0),
+            "Blue": (255, 0, 0),
+            "Yellow": (0, 255, 255)
+        }
+        
+        color_var = tk.StringVar(value="White")
+        color_combo = ttk.Combobox(color_frame, textvariable=color_var, values=list(color_options.keys()), width=10)
+        color_combo.pack()
+        
+        def apply_text():
+            text = text_var.get()
+            position = (pos_x_var.get(), pos_y_var.get())
+            font_scale = font_size_var.get()
+            color = color_options[color_var.get()]
+            
+            result = add_text(self.current_img, text=text, position=position, 
+                             font_scale=font_scale, color=color)
+            
+            self.apply_transformation(f"Add Text ({text})", result)
+            text_window.destroy()
+        
+        ttk.Button(text_window, text="Apply", command=apply_text).grid(row=5, column=0, columnspan=2, pady=10)
+    
+    def apply_color_filter(self):
+        # Only works on color images
+        if len(self.current_img.shape) < 3:
+            messagebox.showwarning("Warning", "Color filtering only works on color images.")
+            return
+        
+        # Create a dialog to select color channel
+        filter_window = tk.Toplevel(self.root)
+        filter_window.title("Extract Color Channel")
+        filter_window.geometry("200x150")
+        filter_window.resizable(False, False)
+        
+        channel_var = tk.IntVar(value=2)  # Default to Red channel
+        
+        ttk.Radiobutton(filter_window, text="Red Channel", variable=channel_var, value=2).pack(pady=5)
+        ttk.Radiobutton(filter_window, text="Green Channel", variable=channel_var, value=1).pack(pady=5)
+        ttk.Radiobutton(filter_window, text="Blue Channel", variable=channel_var, value=0).pack(pady=5)
+        
+        def apply_filter():
+            channel = channel_var.get()
+            result = extract_color_channel(self.current_img, channel=channel)
+            
+            channel_names = {0: "Blue", 1: "Green", 2: "Red"}
+            self.apply_transformation(f"Extract {channel_names[channel]} Channel", result)
+            filter_window.destroy()
+        
+        ttk.Button(filter_window, text="Apply", command=apply_filter).pack(pady=10)
 
 def process_image():
     """
