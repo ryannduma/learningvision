@@ -1,16 +1,22 @@
-#pylint:disable=no-member
-
 import cv2 as cv
 import numpy as np
 
-img = cv.imread('../Resources/Photos/park.jpg')
+img = cv.imread('/Users/rynduma/learningvision/learningvision/Resources/Photos/park.jpg')
 cv.imshow('Park', img)
 
 # Translation
 def translate(img, x, y):
-    transMat = np.float32([[1,0,x],[0,1,y]])
-    dimensions = (img.shape[1], img.shape[0])
-    return cv.warpAffine(img, transMat, dimensions)
+    transMat = np.float32([[1,0,x],[0,1,y]]) # to translate an image you must make a translation matrix - very linear algebra i know
+    # the translation matrix is a 2x3 matrix that contains the translation values
+    # the first row contains the translation values for the x-axis
+    # the second row contains the translation values for the y-axis
+    # the third row is the padding row and is not used
+    # the translation matrix is a 2x3 matrix that contains the translation values
+    # the first row contains the translation values for the x-axis
+    # the second row contains the translation values for the y-axis
+    # the third row is the padding row and is not used
+    dimensions = (img.shape[1], img.shape[0]) # the dimensions of the image
+    return cv.warpAffine(img, transMat, dimensions) # the warpAffine function is used to translate the image
 
 # -x --> Left
 # -y --> Up
