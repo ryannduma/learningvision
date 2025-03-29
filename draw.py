@@ -41,7 +41,7 @@ cv.imshow('White Line Added', blank)
 # Syntax: cv.putText(image, text, position, font, scale, color, thickness)
 # This adds text in green near the top of the image
 font = cv.FONT_HERSHEY_TRIPLEX
-cv.putText(blank, 'OpenCV Drawing Demo', (50, 100), font, 
+cv.putText(blank, 'OpenCV Drawing Demo', (20, 400), font, 
            1.0, (0, 255, 0), thickness=2)
 cv.imshow('Final Composite Image', blank)
 
