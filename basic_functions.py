@@ -1,13 +1,11 @@
-#pylint:disable=no-member
-
 import cv2 as cv
 
 # Read in an image
-img = cv.imread('../Resources/Photos/park.jpg')
+img = cv.imread('/Users/rynduma/learningvision/learningvision/Resources/Photos/park.jpg')
 cv.imshow('Park', img)
 
 # Converting to grayscale
-gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY) # cv.COLOR_BGR2GRAY is a constant that specifies the conversion from BGR to grayscale
 cv.imshow('Gray', gray)
 
 # Blur 
@@ -33,3 +31,5 @@ cv.imshow('Resized', resized)
 # Cropping
 cropped = img[50:200, 200:400]
 cv.imshow('Cropped', cropped)
+
+cv.waitKey(0)
