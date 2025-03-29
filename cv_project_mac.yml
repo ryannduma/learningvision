@@ -1,0 +1,24 @@
+name: cv_project
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - numpy
+  - matplotlib
+  - pandas
+  - scikit-learn
+  - scikit-image
+  - opencv
+  - tensorflow
+  - ipykernel
+  - jupyter
+  - jupyterlab
+  - pillow
+  - scipy
+  - pip:
+      - mediapipe
+      - opencv-contrib-python
+      - sounddevice
+      - tqdm
