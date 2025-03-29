@@ -1,8 +1,9 @@
 import cv2 as cv
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog, Menu
 from PIL import Image, ImageTk
 import numpy as np
+import os
 from typing import Tuple, Any, Optional, Union, List
 
 # Define a type alias for our image type to avoid repeating the complex type
@@ -246,18 +247,20 @@ def add_text(image: ImageType, text: str="Sample Text", position: Tuple[int, int
     return img_copy
 
 class ImageProcessorApp:
-    def __init__(self, root: tk.Tk, image_path: str):
+    def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Image Processor")
         self.root.geometry("1000x650")
         
-        # Load the image
-        self.original_img = cv.imread(image_path)
-        if self.original_img is None:
-            raise ValueError(f"Could not read image at {image_path}")
+        # Track current file path
+        self.current_file_path = None
         
-        # Current processed image (starts as original)
-        self.current_img = self.original_img.copy()
+        # Create the menu
+        self.create_menu()
+        
+        # Initialize image placeholders
+        self.original_img = None
+        self.current_img = None
         
         # Track applied operations
         self.applied_operations = []
@@ -267,11 +270,11 @@ class ImageProcessorApp:
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Create image display area
-        self.img_label = ttk.Label(self.main_frame)
+        self.img_label = ttk.Label(self.main_frame, text="Open an image to begin")
         self.img_label.pack(pady=10)
         
         # Create status label to show applied transformations
-        self.status_label = ttk.Label(self.main_frame, text="No transformations applied")
+        self.status_label = ttk.Label(self.main_frame, text="No image loaded")
         self.status_label.pack(pady=5)
         
         # Create buttons frame - using two rows for better organization
@@ -281,15 +284,91 @@ class ImageProcessorApp:
         self.buttons_frame2 = ttk.Frame(self.main_frame)
         self.buttons_frame2.pack(pady=5)
         
-        # Create buttons for each operation
-        self.create_buttons()
-        
         # Create reset button
         self.reset_button = ttk.Button(self.main_frame, text="Reset to Original", command=self.reset_image)
         self.reset_button.pack(pady=5)
         
-        # Display the original image (do this last after all UI elements are created)
-        self.display_image(self.original_img, "Original Image")
+        # Create buttons for each operation
+        self.create_buttons()
+
+    def create_menu(self):
+        # Create the main menu bar
+        menubar = Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # Create the File menu
+        file_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        
+        # Add commands to the File menu
+        file_menu.add_command(label="Open Image...", command=self.open_image)
+        file_menu.add_command(label="Save Current Image...", command=self.save_image)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
+    def open_image(self):
+        file_path = filedialog.askopenfilename(
+            title="Select Image",
+            filetypes=[
+                ("Image files", "*.jpg *.jpeg *.png *.bmp *.tif *.tiff"),
+                ("JPEG files", "*.jpg *.jpeg"),
+                ("PNG files", "*.png"),
+                ("BMP files", "*.bmp"),
+                ("TIFF files", "*.tif *.tiff"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if file_path:
+            self.current_file_path = file_path
+            self.load_image(file_path)
+    
+    def load_image(self, file_path):
+        # Read the image
+        img = cv.imread(file_path)
+        if img is None:
+            messagebox.showerror("Error", f"Could not read image at {file_path}")
+            return
+        
+        # Store the original image and update current image
+        self.original_img = img.copy()
+        self.current_img = img.copy()
+        
+        # Reset the applied operations list
+        self.applied_operations = []
+        
+        # Update the window title with the file name
+        file_name = os.path.basename(file_path)
+        self.root.title(f"Image Processor - {file_name}")
+        
+        # Display the image
+        self.display_image(self.original_img, f"Original: {file_name}")
+        
+    def save_image(self):
+        if self.current_img is None:
+            messagebox.showwarning("Warning", "No image to save.")
+            return
+        
+        # Get the file path for saving
+        file_path = filedialog.asksaveasfilename(
+            title="Save Image",
+            defaultextension=".jpg",
+            filetypes=[
+                ("JPEG files", "*.jpg"),
+                ("PNG files", "*.png"),
+                ("BMP files", "*.bmp"),
+                ("TIFF files", "*.tif"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if file_path:
+            # Save the image to the specified path
+            success = cv.imwrite(file_path, self.current_img)
+            if success:
+                messagebox.showinfo("Success", f"Image saved to:\n{file_path}")
+            else:
+                messagebox.showerror("Error", "Failed to save the image.")
         
     def create_buttons(self):
         # First row of operations
@@ -316,14 +395,32 @@ class ImageProcessorApp:
         
         # Create buttons for the first row
         for text, command in operations_row1:
-            btn = ttk.Button(self.buttons_frame1, text=text, command=command)
+            btn = ttk.Button(self.buttons_frame1, text=text, command=command, state=tk.DISABLED)
             btn.pack(side=tk.LEFT, padx=5)
         
         # Create buttons for the second row
         for text, command in operations_row2:
-            btn = ttk.Button(self.buttons_frame2, text=text, command=command)
+            btn = ttk.Button(self.buttons_frame2, text=text, command=command, state=tk.DISABLED)
             btn.pack(side=tk.LEFT, padx=5)
+            
+        # Store buttons to enable/disable them
+        self.operation_buttons = self.buttons_frame1.winfo_children() + self.buttons_frame2.winfo_children()
+        
+        # Disable the reset button initially
+        self.reset_button.config(state=tk.DISABLED)
     
+    def enable_buttons(self):
+        """Enable all operation buttons once an image is loaded"""
+        for button in self.operation_buttons:
+            button.config(state=tk.NORMAL)
+        self.reset_button.config(state=tk.NORMAL)
+    
+    def disable_buttons(self):
+        """Disable all operation buttons when no image is loaded"""
+        for button in self.operation_buttons:
+            button.config(state=tk.DISABLED)
+        self.reset_button.config(state=tk.DISABLED)
+        
     def show_warning(self, message):
         """Show a warning dialog but allow the user to proceed."""
         return messagebox.askokcancel("Operation Warning", message)
@@ -345,6 +442,12 @@ class ImageProcessorApp:
         return None
     
     def display_image(self, image, title: str):
+        # If no image, show a placeholder
+        if image is None:
+            self.img_label.config(text="No image loaded", image='')
+            self.status_label.config(text="No image loaded")
+            return
+        
         # Convert from BGR to RGB for PIL
         if len(image.shape) == 3:  # Color image
             image_rgb = cv.cvtColor(image, cv.COLOR_BGR2RGB)
@@ -364,19 +467,29 @@ class ImageProcessorApp:
         img_tk = ImageTk.PhotoImage(image=img_pil)
         
         # Update the image in the label
-        self.img_label.configure(image=img_tk)
+        self.img_label.configure(image=img_tk, text="")
         self.img_label.image = img_tk  # Keep a reference
         
         # Update window title
-        self.root.title(f"Image Processor - {title}")
+        if self.current_file_path:
+            file_name = os.path.basename(self.current_file_path)
+            self.root.title(f"Image Processor - {file_name} - {title}")
+        else:
+            self.root.title(f"Image Processor - {title}")
         
         # Update status label
         if self.applied_operations:
             self.status_label.config(text=f"Applied: {' → '.join(self.applied_operations)}")
         else:
             self.status_label.config(text="Original image")
+            
+        # Enable operation buttons if they aren't already
+        self.enable_buttons()
     
     def reset_image(self):
+        if self.original_img is None:
+            return
+            
         self.current_img = self.original_img.copy()
         self.applied_operations = []
         self.display_image(self.current_img, "Original Image")
@@ -392,7 +505,17 @@ class ImageProcessorApp:
         # Update display
         self.display_image(self.current_img, f"After {operation_name}")
     
+    def check_if_image_loaded(self):
+        """Check if an image is loaded and show warning if not."""
+        if self.current_img is None:
+            messagebox.showwarning("Warning", "Please open an image first.")
+            return False
+        return True
+    
     def apply_grayscale(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Check for conflicts
         warning = self.check_operation_conflicts("Grayscale")
         if warning and not self.show_warning(warning):
@@ -402,6 +525,9 @@ class ImageProcessorApp:
         self.apply_transformation("Grayscale", result)
     
     def apply_blur(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Check for conflicts
         warning = self.check_operation_conflicts("Blur")
         if warning and not self.show_warning(warning):
@@ -411,6 +537,9 @@ class ImageProcessorApp:
         self.apply_transformation("Blur", result)
     
     def detect_edges(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Check for conflicts
         warning = self.check_operation_conflicts("Edges")
         if warning and not self.show_warning(warning):
@@ -426,6 +555,9 @@ class ImageProcessorApp:
             self.apply_transformation("Edges", result)
     
     def apply_dilate(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Check for conflicts
         warning = self.check_operation_conflicts("Dilate")
         if warning and not self.show_warning(warning):
@@ -447,6 +579,9 @@ class ImageProcessorApp:
             self.apply_transformation("Dilate", result)
     
     def apply_erode(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Check for conflicts
         warning = self.check_operation_conflicts("Erode")
         if warning and not self.show_warning(warning):
@@ -456,16 +591,91 @@ class ImageProcessorApp:
         self.apply_transformation("Erode", result)
     
     def apply_resize(self):
-        # Resizing has little conflict with other operations
-        result = resize_image(self.current_img)
-        self.apply_transformation("Resize", result)
+        if not self.check_if_image_loaded():
+            return
+            
+        # Prompt for new dimensions
+        resize_window = tk.Toplevel(self.root)
+        resize_window.title("Resize Image")
+        resize_window.geometry("300x150")
+        resize_window.resizable(False, False)
+        
+        ttk.Label(resize_window, text="Width:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        width_var = tk.IntVar(value=500)
+        ttk.Entry(resize_window, textvariable=width_var, width=10).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(resize_window, text="Height:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        height_var = tk.IntVar(value=500)
+        ttk.Entry(resize_window, textvariable=height_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
+        def apply_resize_dimensions():
+            width = width_var.get()
+            height = height_var.get()
+            
+            if width <= 0 or height <= 0:
+                messagebox.showerror("Error", "Dimensions must be positive values.")
+                return
+                
+            # Resizing has little conflict with other operations
+            result = resize_image(self.current_img, dimensions=(width, height))
+            self.apply_transformation(f"Resize ({width}x{height})", result)
+            resize_window.destroy()
+            
+        ttk.Button(resize_window, text="Apply", command=apply_resize_dimensions).grid(row=2, column=0, columnspan=2, pady=10)
     
     def apply_crop(self):
-        # Cropping has little conflict with other operations
-        result = crop_image(self.current_img)
-        self.apply_transformation("Crop", result)
+        if not self.check_if_image_loaded():
+            return
+            
+        # Get image dimensions
+        height, width = self.current_img.shape[:2]
+            
+        # Create a dialog for crop parameters
+        crop_window = tk.Toplevel(self.root)
+        crop_window.title("Crop Image")
+        crop_window.geometry("300x200")
+        crop_window.resizable(False, False)
         
+        ttk.Label(crop_window, text=f"Image dimensions: {width}x{height}").grid(row=0, column=0, columnspan=2, padx=5, pady=5)
+        
+        ttk.Label(crop_window, text="X start:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        x_start_var = tk.IntVar(value=0)
+        ttk.Entry(crop_window, textvariable=x_start_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(crop_window, text="X end:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        x_end_var = tk.IntVar(value=width)
+        ttk.Entry(crop_window, textvariable=x_end_var, width=10).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(crop_window, text="Y start:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+        y_start_var = tk.IntVar(value=0)
+        ttk.Entry(crop_window, textvariable=y_start_var, width=10).grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        
+        ttk.Label(crop_window, text="Y end:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        y_end_var = tk.IntVar(value=height)
+        ttk.Entry(crop_window, textvariable=y_end_var, width=10).grid(row=4, column=1, sticky="w", padx=5, pady=5)
+        
+        def apply_crop_coordinates():
+            x_start = x_start_var.get()
+            x_end = x_end_var.get()
+            y_start = y_start_var.get()
+            y_end = y_end_var.get()
+            
+            # Validate inputs
+            if x_start < 0 or y_start < 0 or x_end > width or y_end > height or x_start >= x_end or y_start >= y_end:
+                messagebox.showerror("Error", "Invalid crop coordinates. Please check your values.")
+                return
+                
+            # Apply crop
+            result = crop_image(self.current_img, y_range=(y_start, y_end), x_range=(x_start, x_end))
+            self.apply_transformation(f"Crop ({x_start},{y_start},{x_end},{y_end})", result)
+            crop_window.destroy()
+            
+        ttk.Button(crop_window, text="Apply", command=apply_crop_coordinates).grid(row=5, column=0, columnspan=2, pady=10)
+    
     def apply_brightness(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Prompt user for alpha (contrast) and beta (brightness) values
         alpha = simpledialog.askfloat("Adjust Contrast", "Enter contrast multiplier (1.0 = no change):", 
                                      initialvalue=1.5, minvalue=0.1, maxvalue=3.0)
@@ -481,6 +691,9 @@ class ImageProcessorApp:
         self.apply_transformation(f"Brightness/Contrast (α={alpha:.1f}, β={beta})", result)
     
     def apply_threshold(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Convert to grayscale if needed
         if len(self.current_img.shape) > 2 and "Grayscale" not in self.applied_operations:
             if self.show_warning("Thresholding works best on grayscale images. Convert to grayscale first?"):
@@ -501,6 +714,9 @@ class ImageProcessorApp:
         self.apply_transformation(f"Threshold ({threshold})", result)
     
     def apply_rotate(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Prompt user for rotation angle
         angle = simpledialog.askfloat("Rotate", "Enter rotation angle in degrees:", 
                                      initialvalue=45, minvalue=-180, maxvalue=180)
@@ -511,6 +727,9 @@ class ImageProcessorApp:
         self.apply_transformation(f"Rotate ({angle}°)", result)
     
     def apply_flip(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Create a popup to select flip direction
         flip_window = tk.Toplevel(self.root)
         flip_window.title("Flip Direction")
@@ -534,6 +753,9 @@ class ImageProcessorApp:
         ttk.Button(flip_window, text="Apply", command=apply_selected_flip).pack(pady=10)
     
     def apply_sharpen(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Check for conflicts
         warning = self.check_operation_conflicts("Sharpen")
         if warning and not self.show_warning(warning):
@@ -543,6 +765,9 @@ class ImageProcessorApp:
         self.apply_transformation("Sharpen", result)
     
     def apply_add_text(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Create a dialog to get text details
         text_window = tk.Toplevel(self.root)
         text_window.title("Add Text")
@@ -596,6 +821,9 @@ class ImageProcessorApp:
         ttk.Button(text_window, text="Apply", command=apply_text).grid(row=5, column=0, columnspan=2, pady=10)
     
     def apply_color_filter(self):
+        if not self.check_if_image_loaded():
+            return
+            
         # Only works on color images
         if len(self.current_img.shape) < 3:
             messagebox.showwarning("Warning", "Color filtering only works on color images.")
@@ -627,14 +855,11 @@ def process_image():
     """
     Main function to process an image using a GUI interface.
     """
-    # Set up the image path
-    img_path = '/Users/rynduma/learningvision/learningvision/Resources/Photos/park.jpg'
-    
     # Create the Tkinter root window
     root = tk.Tk()
     
     # Create the application
-    app = ImageProcessorApp(root, img_path)
+    app = ImageProcessorApp(root)
     
     # Start the Tkinter event loop
     root.mainloop()
